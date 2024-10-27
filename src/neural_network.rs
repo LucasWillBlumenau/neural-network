@@ -2,6 +2,7 @@ use crate::activation::Activation;
 use crate::hidden_layer::HiddenLayer;
 use crate::input_layer::InputLayer;
 use crate::layer::Layer;
+use crate::network_config::NetworkConfig;
 use std::f64::consts::E;
 
 
@@ -11,37 +12,43 @@ pub struct NeuralNetwork {
     hidden_layers: Vec<HiddenLayer>,
     output_layer: HiddenLayer,
     learning_rate: f64,
+    input_size: u16,
+    output_size: u16,
     loss: f64,
     count: u64,
 }
 
 impl NeuralNetwork {
 
-    pub fn new(
-        activation: Activation,
-        layers_size: u16,
-        layers_quantity: u8,
-        input_size: u16,
-        output_size: u16,
-    ) -> Self {
+    pub fn new(config: NetworkConfig) -> Self {
         
+        assert_ne!(config.layers_size, 0);
+        assert_ne!(config.layers_quantity, 0);
+        assert_ne!(config.input_size, 0);
+        assert_ne!(config.output_size, 0);
+
         let mut hidden_layers = vec![];
         
-        hidden_layers.push(HiddenLayer::new(layers_size, input_size));
+        hidden_layers.push(HiddenLayer::new(config.layers_size, config.input_size));
         
-        for _ in 1..layers_quantity {
-            hidden_layers.push(HiddenLayer::new(layers_size, layers_size));
+        for _ in 1..config.layers_quantity {
+            hidden_layers.push(HiddenLayer::new(config.layers_size, config.layers_size));
         }
-        
-        let output_layer = HiddenLayer::new(output_size, layers_size);
-        let learning_rate = 0.5;
+       
+        let activation = config.activation;
+        let output_layer = HiddenLayer::new(config.output_size, config.layers_size);
+        let learning_rate = config.learning_rate;
+        let input_size = config.input_size;
+        let output_size = config.output_size;
         let loss = 0f64;
         let count = 0;
 
-        NeuralNetwork { activation, hidden_layers, output_layer, learning_rate, loss, count }
+        NeuralNetwork { activation, hidden_layers, output_layer, learning_rate, input_size, output_size, loss, count }
     }
 
     pub fn predict(&mut self, input: &InputLayer) -> Vec<f64> {
+        assert_eq!(input.values.len() as u16, self.input_size);
+        
         self.feed_foward(input);
 
         let predictions: Vec<f64> = self.output_layer.get_holded_values()
@@ -60,6 +67,9 @@ impl NeuralNetwork {
     }
 
     pub fn train(&mut self, input: &InputLayer, predictions: &Vec<f64>) {
+        assert_eq!(input.values.len() as u16, self.input_size);
+        assert_eq!(predictions.len() as u16, self.output_size);
+
         self.feed_foward(input);
         self.backpropagate(input, predictions);
     }
