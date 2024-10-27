@@ -24,7 +24,7 @@ impl HiddenLayer {
 
 impl Layer for HiddenLayer {
     
-    fn get_holded_values(&self) -> impl Iterator<Item = f32> {
+    fn get_holded_values(&self) -> impl Iterator<Item = f64> {
         self.neurons.iter().map(|neuron| neuron.holded)
     }
 }

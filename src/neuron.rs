@@ -1,38 +1,42 @@
 use crate::layer::Layer;
-use crate::activation::Activation;
 use rand::Rng;
 
 #[derive(Debug)]
 pub struct Neuron {
-    pub holded: f32,
-    bias: f32,
-    weights: Vec<f32>,
+    pub holded: f64,
+    pub bias: f64,
+    pub sum: f64,
+    pub weights: Vec<f64>,
 }
 
 impl Neuron {
     
+   
     pub fn new(weights_size: u16) -> Self {
         let mut generator = rand::thread_rng();
-        let mut weights: Vec<f32> = vec![];
+        let mut weights: Vec<f64> = vec![];
 
+        let limit = (1.0 / (weights_size as f64).sqrt()).sqrt();
         for _ in 0..weights_size {
-            let value: f32 = generator.gen_range(-1.0..=1.0);
+            let value: f64 = generator.gen_range(-limit..=limit);
             weights.push(value);
         }
-        
-        let holded = 0f32;
-        let bias: f32 = generator.gen_range(-1.0..=1.0);
-        
-        Neuron { holded, bias, weights }
-        
+
+        let holded = 0f64;
+        let bias: f64 = generator.gen_range(-limit..=limit);
+        let sum = 0f64;
+
+        Neuron { holded, bias, sum, weights }
     }
+
     
-    pub fn activate<T: Layer>(&mut self, layer: &T, activation: &Activation) -> f32 {
-        let mut sum = 0f32;
+    pub fn activate<T: Layer>(&mut self, layer: &T, activation: fn(f64) -> f64) {
+        let mut sum = self.bias;
         for (holded, weight) in layer.get_holded_values().zip(self.weights.iter()) {
             sum += holded * weight;
         }
-        (activation.function)(sum)
+        self.sum = sum;
+        self.holded = (activation)(sum);
     }
     
 }
