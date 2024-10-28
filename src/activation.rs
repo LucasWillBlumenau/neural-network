@@ -1,19 +1,37 @@
 use std::f64::consts::E;
 
-#[derive(Debug)]
+use serde::{Deserialize, Serialize};
+
+
+#[derive(Debug, Deserialize, Serialize)]
+pub enum ActivationType {
+    Relu,
+    Sigmoid,
+    Tanh,
+}
+
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Activation {
-    pub function: fn(f64) -> f64,
-    pub derivative: fn(f64) -> f64,
+    pub activation_type: ActivationType,
 }
 
 impl Activation {
 
-    pub fn sigmoid() -> Self {
-        Activation { function: sigmoid, derivative: sigmoid_derivative } 
+    pub fn function(&self, value: f64) -> f64 {
+        match self.activation_type {
+            ActivationType::Relu => { relu(value) }
+            ActivationType::Sigmoid => { sigmoid(value) }
+            ActivationType::Tanh => { tahn(value) }
+        }
     }
 
-    pub fn relu() -> Self {
-        Activation { function: relu, derivative: relu_derivative }
+    pub fn derivative(&self, value: f64) -> f64 {
+        match self.activation_type {
+            ActivationType::Relu => { relu_derivative(value) }
+            ActivationType::Sigmoid => { sigmoid_derivative(value) }
+            ActivationType::Tanh => { tahn_derivative(value) }
+        }
     }
 }
 
@@ -40,4 +58,16 @@ fn relu_derivative(value: f64) -> f64 {
     } else {
         0f64
     } 
+}
+
+fn tahn(value: f64) -> f64 {
+    (E.powf(value) - E.powf(-value)) / E.powf(value) + E.powf(-value)
+}
+
+fn tahn_derivative(value: f64) -> f64 {
+    let cosh = (E.powf(value) + E.powf(-value)) / 2f64;
+    let sinh = (E.powf(value) - E.powf(-value)) / 2f64;
+    let cosh_squared = cosh * cosh;
+    let sinh_squared = sinh * sinh;
+    (cosh_squared - sinh_squared) / cosh_squared
 }

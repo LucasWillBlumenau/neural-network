@@ -1,12 +1,17 @@
+use bincode::Error;
+use serde::{Deserialize, Serialize};
+
 use crate::activation::Activation;
 use crate::hidden_layer::HiddenLayer;
 use crate::input_layer::InputLayer;
 use crate::layer::Layer;
 use crate::network_config::NetworkConfig;
 use std::f64::consts::E;
+use std::fs;
+use std::io::{Read, Write};
 
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct NeuralNetwork {
     activation: Activation,
     hidden_layers: Vec<HiddenLayer>,
@@ -14,8 +19,6 @@ pub struct NeuralNetwork {
     learning_rate: f64,
     input_size: u16,
     output_size: u16,
-    loss: f64,
-    count: u64,
 }
 
 impl NeuralNetwork {
@@ -40,10 +43,28 @@ impl NeuralNetwork {
         let learning_rate = config.learning_rate;
         let input_size = config.input_size;
         let output_size = config.output_size;
-        let loss = 0f64;
-        let count = 0;
 
-        NeuralNetwork { activation, hidden_layers, output_layer, learning_rate, input_size, output_size, loss, count }
+        NeuralNetwork { activation, hidden_layers, output_layer, learning_rate, input_size, output_size }
+    }
+
+    pub fn save(&self, path: &str) -> Result<(), Error> {
+
+        let encoded: Vec<u8> = bincode::serialize(self)?;
+        let mut file = fs::OpenOptions::new().write(true)
+                                                   .create(true) 
+                                                   .open(path)?;
+        file.write_all(&encoded)?;
+
+        Ok(())
+    }
+
+    pub fn from_file_model(path: &str) -> Result<Self, Error> {
+        let mut file = fs::File::open(path)?;
+        let mut buffer: Vec<u8> = vec![];
+        file.read_to_end(&mut buffer)?;
+        
+        let neural_network: Self = bincode::deserialize(&buffer)?;
+        Ok(neural_network)
     }
 
     pub fn predict(&mut self, input: &InputLayer) -> Vec<f64> {
@@ -57,15 +78,6 @@ impl NeuralNetwork {
         predictions
     }
 
-    pub fn get_average_loss(&self) -> f64 {
-        self.loss / self.count as f64
-    }
-
-    pub fn reset_loss(&mut self) {
-        self.loss = 0f64;
-        self.count = 0;
-    }
-
     pub fn train(&mut self, input: &InputLayer, predictions: &Vec<f64>) {
         assert_eq!(input.values.len() as u16, self.input_size);
         assert_eq!(predictions.len() as u16, self.output_size);
@@ -76,9 +88,6 @@ impl NeuralNetwork {
 
     fn backpropagate(&mut self, input: &InputLayer, predictions: &Vec<f64>) {
         for (neuron, prediction) in self.output_layer.neurons.iter_mut().zip(predictions.iter()) {
-            self.loss += (neuron.holded - prediction).powi(2);
-            self.count += 1;
-
             let error_derivative = 2f64 * (neuron.holded - prediction) * neuron.holded * (1f64 - neuron.holded);
 
             neuron.bias -= error_derivative * self.learning_rate;
@@ -111,7 +120,7 @@ impl NeuralNetwork {
             let prev_layer = left.last().unwrap();
 
             for (j, neuron) in current_layer.neurons.iter_mut().enumerate() {
-                let error_derivative = errors[j] * (self.activation.derivative)(neuron.sum);
+                let error_derivative = errors[j] * self.activation.derivative(neuron.sum);
                 let delta = error_derivative * self.learning_rate;
                 neuron.bias -= delta;
 
@@ -132,7 +141,7 @@ impl NeuralNetwork {
         }
 
         for (i, neuron) in self.hidden_layers[0].neurons.iter_mut().enumerate() {
-            let error_derivative = errors[i] * (self.activation.derivative)(neuron.sum);
+            let error_derivative = errors[i] * self.activation.derivative(neuron.sum);
             let delta = error_derivative * self.learning_rate;
             neuron.bias -= delta;
 
@@ -149,21 +158,23 @@ impl NeuralNetwork {
         let first_layer = &mut first[0];
         
         for neuron in &mut first_layer.neurons {
-            neuron.activate(input, self.activation.function);
+            neuron.sum = neuron.compute_sum(input);
+            neuron.holded = self.activation.function(neuron.sum);
         }
         
         let mut last_layer = first_layer;
         
         for layer in rest {
             for neuron in &mut layer.neurons {
-                neuron.activate(last_layer, self.activation.function);
+                neuron.sum = neuron.compute_sum(last_layer);
+                neuron.holded = self.activation.function(neuron.sum);
             }
             last_layer = layer;
         }
         
-        let sigmoid = |number: f64| 1f64 / (1f64 + E.powf(-number));
-        for neuron in &mut self.output_layer.neurons {
-            neuron.activate(last_layer, sigmoid);
+        for neuron in self.output_layer.neurons.iter_mut() {
+            neuron.sum = neuron.compute_sum(last_layer);
+            neuron.holded = 1f64 / (1f64 + E.powf(-neuron.sum));
         }
     }
     

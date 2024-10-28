@@ -1,7 +1,8 @@
 use crate::layer::Layer;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Neuron {
     pub holded: f64,
     pub bias: f64,
@@ -30,13 +31,12 @@ impl Neuron {
     }
 
     
-    pub fn activate<T: Layer>(&mut self, layer: &T, activation: fn(f64) -> f64) {
+    pub fn compute_sum<T: Layer>(&self, layer: &T) -> f64 {
         let mut sum = self.bias;
         for (holded, weight) in layer.get_holded_values().zip(self.weights.iter()) {
             sum += holded * weight;
         }
-        self.sum = sum;
-        self.holded = (activation)(sum);
+        sum
     }
     
 }

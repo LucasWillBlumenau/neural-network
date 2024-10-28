@@ -1,8 +1,10 @@
+use serde::{Deserialize, Serialize};
+
 use crate::layer::Layer;
 use crate::neuron::Neuron;
 
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HiddenLayer {
     pub neurons: Vec<Neuron>
 }
