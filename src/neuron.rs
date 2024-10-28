@@ -31,9 +31,9 @@ impl Neuron {
     }
 
     
-    pub fn compute_sum<T: Layer>(&self, layer: &T) -> f64 {
+    pub fn compute_sum(&self, layer: Layer) -> f64 {
         let mut sum = self.bias;
-        for (holded, weight) in layer.get_holded_values().zip(self.weights.iter()) {
+        for (holded, weight) in layer.get_values().zip(self.weights.iter()) {
             sum += holded * weight;
         }
         sum

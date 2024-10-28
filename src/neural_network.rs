@@ -1,21 +1,20 @@
+use std::fs;
+use std::io::{Read, Write};
+
 use bincode::Error;
 use serde::{Deserialize, Serialize};
 
 use crate::activation::Activation;
-use crate::hidden_layer::HiddenLayer;
-use crate::input_layer::InputLayer;
+use crate::dense_layer::DenseLayer;
 use crate::layer::Layer;
 use crate::network_config::NetworkConfig;
-use std::f64::consts::E;
-use std::fs;
-use std::io::{Read, Write};
-
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct NeuralNetwork {
     activation: Activation,
-    hidden_layers: Vec<HiddenLayer>,
-    output_layer: HiddenLayer,
+    output_activation: Activation,
+    hidden_layers: Vec<DenseLayer>,
+    output_layer: DenseLayer,
     learning_rate: f64,
     input_size: u16,
     output_size: u16,
@@ -32,19 +31,28 @@ impl NeuralNetwork {
 
         let mut hidden_layers = vec![];
         
-        hidden_layers.push(HiddenLayer::new(config.layers_size, config.input_size));
+        hidden_layers.push(DenseLayer::new(config.layers_size, config.input_size));
         
         for _ in 1..config.layers_quantity {
-            hidden_layers.push(HiddenLayer::new(config.layers_size, config.layers_size));
+            hidden_layers.push(DenseLayer::new(config.layers_size, config.layers_size));
         }
        
         let activation = config.activation;
-        let output_layer = HiddenLayer::new(config.output_size, config.layers_size);
+        let output_activation = config.output_activation;
+        let output_layer = DenseLayer::new(config.output_size, config.layers_size);
         let learning_rate = config.learning_rate;
         let input_size = config.input_size;
         let output_size = config.output_size;
 
-        NeuralNetwork { activation, hidden_layers, output_layer, learning_rate, input_size, output_size }
+        NeuralNetwork {
+            activation,
+            output_activation,
+            hidden_layers,
+            output_layer,
+            learning_rate,
+            input_size,
+            output_size,
+        }
     }
 
     pub fn save(&self, path: &str) -> Result<(), Error> {
@@ -67,28 +75,36 @@ impl NeuralNetwork {
         Ok(neural_network)
     }
 
-    pub fn predict(&mut self, input: &InputLayer) -> Vec<f64> {
-        assert_eq!(input.values.len() as u16, self.input_size);
+    pub fn predict(&mut self, input: &[f64]) -> Box<[f64]> {
+        assert_eq!(input.len() as u16, self.input_size);
         
-        self.feed_foward(input);
+        self.feed_foward(&input);
 
-        let predictions: Vec<f64> = self.output_layer.get_holded_values()
-                                                     .into_iter()
-                                                     .collect();
+        let predictions: Box<[f64]> = self.output_layer.neurons.iter()
+                                                               .map(|neuron| neuron.holded)
+                                                               .collect();
         predictions
     }
 
-    pub fn train(&mut self, input: &InputLayer, predictions: &Vec<f64>) {
-        assert_eq!(input.values.len() as u16, self.input_size);
+    pub fn train_many(&mut self, inputs: &Vec<Vec<f64>>, predictions: &Vec<Vec<f64>>) {
+        assert_eq!(inputs.len(), predictions.len());
+
+        for (input, prediction) in inputs.iter().zip(predictions.iter()) {
+            self.train(input, prediction);
+        }
+    }
+
+    pub fn train(&mut self, input: &[f64], predictions: &[f64]) {
+        assert_eq!(input.len() as u16, self.input_size);
         assert_eq!(predictions.len() as u16, self.output_size);
 
         self.feed_foward(input);
         self.backpropagate(input, predictions);
     }
 
-    fn backpropagate(&mut self, input: &InputLayer, predictions: &Vec<f64>) {
+    fn backpropagate(&mut self, input: &[f64], predictions: &[f64]) {
         for (neuron, prediction) in self.output_layer.neurons.iter_mut().zip(predictions.iter()) {
-            let error_derivative = 2f64 * (neuron.holded - prediction) * neuron.holded * (1f64 - neuron.holded);
+            let error_derivative = 2f64 * (neuron.holded - prediction) * self.output_activation.derivative(neuron.sum);
 
             neuron.bias -= error_derivative * self.learning_rate;
 
@@ -124,7 +140,9 @@ impl NeuralNetwork {
                 let delta = error_derivative * self.learning_rate;
                 neuron.bias -= delta;
 
-                for (weight, activation) in neuron.weights.iter_mut().zip(prev_layer.get_holded_values()) {
+                let prev_layer_values = prev_layer.neurons.iter()
+                                                                                     .map(|neuron| neuron.holded);
+                for (weight, activation) in neuron.weights.iter_mut().zip(prev_layer_values) {
                     *weight -= activation * delta;
                 }
 
@@ -140,25 +158,27 @@ impl NeuralNetwork {
             }
         }
 
+        let input = Layer::InputLayer(input);
         for (i, neuron) in self.hidden_layers[0].neurons.iter_mut().enumerate() {
             let error_derivative = errors[i] * self.activation.derivative(neuron.sum);
             let delta = error_derivative * self.learning_rate;
             neuron.bias -= delta;
 
-            for (weight, activation) in neuron.weights.iter_mut().zip(input.get_holded_values()) {
+            
+            for (weight, activation) in neuron.weights.iter_mut().zip(input.get_values()) {
                 *weight -= activation * delta;
             }
         }
     }
 
-    fn feed_foward(&mut self, input: &InputLayer) {
+    fn feed_foward(&mut self, input: &[f64]) {
         
         let (first, rest) = self.hidden_layers.split_at_mut(1);
         
         let first_layer = &mut first[0];
         
         for neuron in &mut first_layer.neurons {
-            neuron.sum = neuron.compute_sum(input);
+            neuron.sum = neuron.compute_sum(Layer::InputLayer(input));
             neuron.holded = self.activation.function(neuron.sum);
         }
         
@@ -166,17 +186,16 @@ impl NeuralNetwork {
         
         for layer in rest {
             for neuron in &mut layer.neurons {
-                neuron.sum = neuron.compute_sum(last_layer);
+                neuron.sum = neuron.compute_sum(Layer::DenseLayer(last_layer));
                 neuron.holded = self.activation.function(neuron.sum);
             }
             last_layer = layer;
         }
         
         for neuron in self.output_layer.neurons.iter_mut() {
-            neuron.sum = neuron.compute_sum(last_layer);
-            neuron.holded = 1f64 / (1f64 + E.powf(-neuron.sum));
+            neuron.sum = neuron.compute_sum(Layer::DenseLayer(last_layer));
+            neuron.holded = self.output_activation.function(neuron.sum);
         }
     }
     
 }
-
